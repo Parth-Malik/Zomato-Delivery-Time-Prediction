@@ -1,33 +1,3 @@
-"""
-================================================================================
-Food Delivery ETA Prediction  -  End-to-End Machine Learning Pipeline
-================================================================================
-Dataset : Zomato-style delivery dataset (45,584 orders)
-Target  : Time_taken (min)  -> total delivery duration in minutes
-Models  : Linear Regression (baseline)  vs  Random Forest Regressor (main)
-
-Two design priorities drive every choice in this script:
-
-  1. NO DATA LEAKAGE ("no pre-feeding")
-     Every transformation that *learns* something from the data
-     (mean/mode imputation, one-hot categories, feature scaling) is fitted
-     on the TRAINING split ONLY and then applied to the test split.
-     This is enforced structurally with an sklearn ColumnTransformer/Pipeline,
-     so test-set statistics can never bleed into training.
-     Only row-wise transforms (distance, hour extraction, prep time) - which
-     use no cross-row information - are done before the split.
-
-  2. NO OVERFITTING
-     The Random Forest is regularised (limited depth, leaf/split minimums)
-     and tuned with cross-validation. We report TRAIN vs TEST metrics for
-     every model, plus 5-fold CV, and explicitly show the train/test gap
-     shrinking from an unregularised baseline to the tuned model.
-
-Run:  py food_delivery_eta.py            (uses default dataset path below)
-      py food_delivery_eta.py <csv_path>
-================================================================================
-"""
-
 import os
 import sys
 import json
