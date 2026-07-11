@@ -30,9 +30,7 @@ RANDOM_STATE = 42
 np.random.seed(RANDOM_STATE)
 sns.set_theme(style="whitegrid")
 
-# --------------------------------------------------------------------------- #
-# Paths
-# --------------------------------------------------------------------------- #
+
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA = r"C:\Users\parth\Downloads\archive\Zomato Dataset.csv"
 DATA_PATH = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(DEFAULT_DATA)
@@ -45,7 +43,6 @@ for d in (OUT_DIR, FIG_DIR, MODEL_DIR):
 
 TARGET = "Time_taken (min)"
 
-# Report accumulator (filled as we go, written to REPORT.md at the end)
 REPORT = []
 
 
@@ -62,9 +59,6 @@ def savefig(fig, name):
     print(f"   [figure] {path.relative_to(BASE_DIR)}")
 
 
-# --------------------------------------------------------------------------- #
-# Helpers
-# --------------------------------------------------------------------------- #
 def haversine_km(lat1, lon1, lat2, lon2):
     """Great-circle distance in km between two coordinate arrays (vectorised)."""
     R = 6371.0088
@@ -93,10 +87,6 @@ def time_of_day_bucket(hour):
         return "Evening"
     return "Night"
 
-
-# =========================================================================== #
-# PHASE 1 - DATA LOADING & EXPLORATION
-# =========================================================================== #
 def phase1_load_and_explore():
     log("=" * 78)
     log("PHASE 1  -  DATA LOADING & EXPLORATION")
@@ -130,7 +120,6 @@ def phase1_load_and_explore():
     log(f"\nTarget '{TARGET}' summary:")
     log(df[TARGET].describe().round(2).to_string())
 
-    # ---- EDA figures (exploration only; no fitted parameters derived) ----
     # Target distribution
     fig, ax = plt.subplots(figsize=(8, 5))
     sns.histplot(df[TARGET], bins=40, kde=True, color="#2a9d8f", ax=ax)
@@ -153,10 +142,6 @@ def phase1_load_and_explore():
 
     return df
 
-
-# =========================================================================== #
-# PHASE 2 (row-wise) - TYPE CONVERSION & FEATURE ENGINEERING  (LEAK-FREE)
-# =========================================================================== #
 def phase2_feature_engineering(df):
     """
     Only ROW-WISE, leakage-free transformations happen here (each row is
@@ -175,11 +160,9 @@ def phase2_feature_engineering(df):
     df = df.drop_duplicates().reset_index(drop=True)
     log(f"Duplicates removed: {before - len(df):,}")
 
-    # --- Fix obviously invalid values with FIXED domain bounds (no data stats) ---
     # Ratings live on a 1-5 scale; the data contains a stray 6.0 -> clip.
     df["Delivery_person_Ratings"] = df["Delivery_person_Ratings"].clip(1, 5)
 
-    # --- Geo distance --------------------------------------------------------
     # India lies entirely in the +lat/+lon hemisphere, but the data contains
     # sign-flipped and near-zero (placeholder) coordinates. abs() undoes the
     # sign errors; a fixed 30 km cap tames the remaining placeholder garbage.
@@ -213,7 +196,7 @@ def phase2_feature_engineering(df):
     # Rush-hour category (coarse part of day).
     df["time_of_day"] = hour.apply(time_of_day_bucket)
 
-    # --- Calendar features ---------------------------------------------------
+    # Calendar features
     order_date = pd.to_datetime(df["Order_Date"], format="%d-%m-%Y", errors="coerce")
     dow = order_date.dt.dayofweek           # 0 = Monday
     df["order_day_of_week"] = dow
@@ -224,7 +207,6 @@ def phase2_feature_engineering(df):
     log(f"distance_km summary : {df['distance_km'].describe()[['mean','min','max']].round(2).to_dict()}")
     log(f"prep_time_min NaN   : {df['prep_time_min'].isna().sum():,} (imputed later, on TRAIN only)")
 
-    # --- Drop leakage-prone / non-predictive identifiers & raw columns -------
     drop_cols = [
         "ID", "Delivery_person_ID",                       # identifiers (no signal, memorisation risk)
         "Restaurant_latitude", "Restaurant_longitude",    # replaced by distance_km
@@ -241,10 +223,6 @@ def phase2_feature_engineering(df):
 
     return df
 
-
-# =========================================================================== #
-# EDA - correlation & boxplots on engineered numeric features
-# =========================================================================== #
 def eda_numeric(df, numeric_features):
     num_cols = numeric_features + [TARGET]
 
@@ -277,10 +255,6 @@ def eda_numeric(df, numeric_features):
     fig.tight_layout()
     savefig(fig, "eda_boxplots.png")
 
-
-# =========================================================================== #
-# Metric helper
-# =========================================================================== #
 def evaluate(name, y_true, y_pred):
     return {
         "Model": name,
@@ -291,11 +265,9 @@ def evaluate(name, y_true, y_pred):
 
 
 def main():
-    # ---------------- Phases 1 & 2 ----------------
     df_raw = phase1_load_and_explore()
     df = phase2_feature_engineering(df_raw)
 
-    # ---- Define feature groups (drives the leak-free ColumnTransformer) ----
     numeric_features = [
         "Delivery_person_Age", "Delivery_person_Ratings", "Vehicle_condition",
         "multiple_deliveries", "distance_km", "prep_time_min",
@@ -314,9 +286,7 @@ def main():
     X = df[numeric_features + categorical_features]
     y = df[TARGET].astype(float)
 
-    # =====================================================================
-    # PHASE 3 - TRAIN/TEST SPLIT  (done BEFORE any fitted preprocessing)
-    # =====================================================================
+
     log("\n" + "=" * 78)
     log("PHASE 3  -  TRAIN / TEST SPLIT (80 / 20)")
     log("=" * 78)
@@ -325,12 +295,7 @@ def main():
     )
     log(f"Train: {X_train.shape[0]:,} rows   Test: {X_test.shape[0]:,} rows")
     log("All imputation / encoding / scaling below is FIT ON TRAIN ONLY  ->  no leakage.")
-
-    # =====================================================================
-    # PHASE 2 (fitted) - PREPROCESSING, fit on TRAIN only
-    #   numeric      : mean imputation
-    #   categorical  : mode imputation + one-hot encoding
-    # =====================================================================
+    
     numeric_pre = Pipeline(steps=[("imputer", SimpleImputer(strategy="mean"))])
     categorical_pre = Pipeline(steps=[
         ("imputer", SimpleImputer(strategy="most_frequent")),
@@ -353,9 +318,7 @@ def main():
     X_train_scaled = scaler.fit_transform(X_train_proc)
     X_test_scaled = scaler.transform(X_test_proc)
 
-    # =====================================================================
-    # PHASE 4 - MODEL TRAINING
-    # =====================================================================
+
     log("\n" + "=" * 78)
     log("PHASE 4  -  MODEL TRAINING")
     log("=" * 78)
